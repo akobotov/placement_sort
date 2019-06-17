@@ -104,9 +104,9 @@ Outperforms qsort on any size, std::sort(g++ 7.2.0) on N > 80, and std::stable_s
 Memory usage
 ------------
 
-Uses `(sizeof(T) + sizeof(index_t)) * size` extra memory. 
+Uses `O((sizeof(T) + k * sizeof(index_t)) * size)` extra memory. 
 
-It is possible to Non stable version can run on sizeof(index_t) * size extra memory.
+It is possible to implement a not stable version can run on just `sizeof(index_t) * size` extra memory.
 
 
 Applicability

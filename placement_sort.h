@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 Alexander Kobotov
+ * Copyright 2018-2019 Alexandr Kobotov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -406,57 +406,12 @@ static inline void move_elements_out_of_place(TElementAccessor& array, const TPl
     for (size_t i = 0; i < size; i++) {
         if (sizeof(typename counters_t::value_type) > 2) if (i + 128 < size)
             _mm_prefetch(&counters[placer.get_place(array.get_buf_value(i + 128))], _MM_HINT_NTA);
-        size_t place = placer.get_place(array.get_buf_value(i));
-        size_t real_dest = counters[place]++;
-        array.move_from_buffer(i, real_dest);
+        size_t target_place = placer.get_place(array.get_buf_value(i));
+        size_t actual_place = counters[target_place]++;
+        array.move_from_buffer(i, actual_place);
     }
 }
 
-#if 0
-template<typename counters_t>
-class MoveTracker {
-    counters_t& counters;
-    constexpr typename counters_t::value_type topBit = (typename counters_t::value_type)1 << (sizeof(typename counters_t::value_type)*8 - 1);
-    public:
-        MoveTracker(counters_t& counters) : counters(counters) {
-
-        }
-
-        void set_sorted(size_t i) {
-            counters[i] |= topBit;
-        }
-
-        inline bool is_sorted(size_t i) const {
-            return topBit & counters[i];
-        }
-
-        inline size_t get_index(size_t place) const {
-            return ~topBit & counter[place];
-        }
-
-        bool clear_if_sorted(size_t i) {
-            bool sorted = is_sorted(i);
-            if (sorted)
-                counters[ш] &= ~topBit;
-            return sorted;
-        }
-
-}
-
-template <typename TElementAccessor, typename TPlaceCalculator, typename counters_t>
-static inline void move_elements_in_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
-    const size_t size = array.get_count();
-    MoveTracker move_tracker(counters);
-    for (size_t current_element = 0; current_element < size; ) {
-        const size_t desired_place = placer.get_place(array.get_value(current_element));
-        const size_t real_place_due_collisions = move_tracker.get_index(place);
-        array.swap(current_element, real_place_due_collisions);
-        move_tracker.set_sorted(index);
-
-
-    }
-}
-#else
 
 template <typename TElementAccessor, typename TPlaceCalculator, typename counters_t>
 static inline void move_elements_in_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
@@ -493,13 +448,12 @@ static inline void move_elements_in_place(TElementAccessor& array, const TPlaceC
         }
     }
 }
-#endif
+
 
 template <typename TElementAccessor, typename TPlaceCalculator, typename counters_t>
 static inline void move_elements(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
     /*
      * Move elements according computed memory distribution for colliding elements.
-     *
      */
     const size_t size = array.get_count();
     if _PLACEMENT_SORT_CONSTEXPR (TElementAccessor::uses_buffer()) {
@@ -731,6 +685,7 @@ void placement_sort(TElementAccessor& array) {
 }
 
 /* TODO:
+ * port tests
  * topBit hider functors
  * fix (36, initFexpGrowth<float> non buff case
  * sort(vector<T>) using vector.swap to save moves twice

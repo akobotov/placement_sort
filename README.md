@@ -48,6 +48,14 @@ struct ValueAccessor {
 This to be used on structs or classes to select a field or a method to pick value from.
 
 
+Example
+-------
+
+```cpp
+placement_sort::sort(array.begin(), array.end(), [](const T* sportsman) -> float { return sportsman->height;});
+```
+
+
 Idea shortly
 ------------
 
@@ -105,11 +113,11 @@ Applicability
 -------------
 
 Works great to sort numerical values, and even better to sort large objects by a numerical field because of low number of data moves.
-Due to the nature of soring by numerical values it's tricky to sort out data which is not numbers by it's nature, eq string.
+Due to the nature of soring by numerical values it's tricky to sort out data which is not numbers by it's nature, eq strings.
 
 
 Possible future features
----------------
+------------------------
 
 - SMP (openmp/pthreads) 
     - sort chunks and merge sort into final
@@ -124,3 +132,6 @@ Possible future features
         Sort local chunks and merge sort on reduce
 
 
+LICENSE
+-------
+Copyright Alexandr Kobotov 2018-2019. Licensed under the Apache License, Version 2.0. See LICENSE file for more details.

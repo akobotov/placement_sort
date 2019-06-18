@@ -21,7 +21,9 @@
 #include <limits>
 #include <cmath>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
 #include <xmmintrin.h>
+#endif
 
 namespace placement_sort {
 
@@ -116,11 +118,11 @@ inline void reverse_sort(RandomIt first, RandomIt last) {
 
 
 
-/**********************************
+/*****************************************************
  *
  * Internal classes and functions
  *
- **********************************/
+ *****************************************************/
 
 namespace internals {
 
@@ -147,7 +149,7 @@ class SharedUninitializedBuffer {
                 ++*count_refs;
         }
 
-        SharedUninitializedBuffer(size_t size) : ptr(nullptr),  count_refs(nullptr) {
+        SharedUninitializedBuffer(size_t size) : ptr(nullptr), count_refs(nullptr) {
             if (size) {
                 ptr = (T*) malloc(sizeof(T) * size + sizeof(size_t));
                 if (ptr == nullptr) {
@@ -368,6 +370,16 @@ class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_p
         T split_value;
 };
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
+template<typename T>
+static inline void prefetch(T p) {
+	_mm_prefetch(p, _MM_HINT_NTA);
+}
+#else
+template<typename T>
+static inline void prefetch(T p) {
+}
+#endif
 
 template <bool fill_buffer, typename counters_t, typename TElementAccessor,typename TPlaceCalculator>
 static inline void count_values_at_each_place(TElementAccessor& array, const TPlaceCalculator& placer,
@@ -377,7 +389,7 @@ static inline void count_values_at_each_place(TElementAccessor& array, const TPl
     has_collisions = false;
     for (size_t i = 0; i < size; i++) {
         if (sizeof(typename counters_t::value_type) > 2) if (i + prefetch_step < size)
-            _mm_prefetch(counters.data() + placer.get_place(array.get_value(i + prefetch_step)), _MM_HINT_NTA);
+            prefetch(counters.data() + placer.get_place(array.get_value(i + prefetch_step)));
         size_t place = placer.get_place(array.get_value(i));
         ++counters[place];
         has_collisions |= counters[place] > 1;
@@ -405,7 +417,7 @@ static inline void move_elements_out_of_place(TElementAccessor& array, const TPl
     const size_t size = array.get_count();
     for (size_t i = 0; i < size; i++) {
         if (sizeof(typename counters_t::value_type) > 2) if (i + 128 < size)
-            _mm_prefetch(&counters[placer.get_place(array.get_buf_value(i + 128))], _MM_HINT_NTA);
+            prefetch(&counters[placer.get_place(array.get_buf_value(i + 128))]);
         size_t target_place = placer.get_place(array.get_buf_value(i));
         size_t actual_place = counters[target_place]++;
         array.move_from_buffer(i, actual_place);
@@ -455,7 +467,6 @@ static inline void move_elements(TElementAccessor& array, const TPlaceCalculator
     /*
      * Move elements according computed memory distribution for colliding elements.
      */
-    const size_t size = array.get_count();
     if _PLACEMENT_SORT_CONSTEXPR (TElementAccessor::uses_buffer()) {
         move_elements_out_of_place(array, placer, counters);
     } else {
@@ -493,7 +504,7 @@ static inline void sort_collisions(TElementAccessor& array, counters_t& counters
     const size_t size = array.get_count();
     typename counters_t::value_type position = 0;
     for (size_t i = 0; i < size; i++) {
-        auto count = counters[i] - position;
+        typename counters_t::value_type count = counters[i] - position;
         if (count > 1) {
             TElementAccessor sub_interval(array, position, count);
             bool placer_is_not_optimal = count > size / 2;
@@ -543,19 +554,34 @@ static inline void selection_sort(TElementAccessor& array) {
 
 
 template<typename TElementAccessor>
+static inline void three_sort(TElementAccessor& array, size_t index_0, size_t index_1, size_t index_2) {
+	if (array.get_value(index_1) < array.get_value(index_0))
+		array.swap(index_1, index_0);
+	if (array.get_value(index_2) < array.get_value(index_0))
+		array.swap(index_2, index_0);
+	if (array.get_value(index_2) < array.get_value(index_1))
+		array.swap(index_2, index_1);
+}
+
+template<typename TElementAccessor>
 static inline bool small_size_sort(TElementAccessor& array) {
     const size_t size = array.get_count();
-
-    if (size < 2)
-        return true;
-    if (size == 2) {
-        if (array.get_value(1) < array.get_value(0))
-            array.swap(1, 0);
-        return true;
-    }
-    if (size <= 8) {
-        selection_sort(array);
-        return true;
+	switch(size) {
+		case 0:
+		case 1:
+			return true;
+		case 2:
+			if (array.get_value(1) < array.get_value(0))
+				array.swap(1, 0);
+			return true;
+		case 3:
+			three_sort(array, 0, 1, 2);
+			return true;
+		default:
+			if (size <= 8) {
+				selection_sort(array);
+				return true;
+			}
     }
 
     return false;
@@ -602,12 +628,8 @@ void qsort(TElementAccessor& array) {
     const size_t size = array.get_count();
     const size_t mid = size / 2;
     const size_t top = size - 1;
-    if (array.get_value(mid) < array.get_value(0))
-        array.swap(mid, 0);
-    if (array.get_value(top) < array.get_value(0))
-        array.swap(top, 0);
-    if (array.get_value(top) < array.get_value(mid))
-        array.swap(mid, top);
+
+	three_sort(array, 0, mid, top);
     array.swap(mid, top);
 
     typename TElementAccessor::value_type pivot = array.get_value(top);
@@ -685,12 +707,12 @@ void placement_sort(TElementAccessor& array) {
 }
 
 /* TODO:
+ * MSVS C++11 support
  * port tests
  * topBit hider functors
  * fix (36, initFexpGrowth<float> non buff case
  * sort(vector<T>) using vector.swap to save moves twice
  * nan support
- * prefetch to be x86 conditionally compiled
  * use only < as comparator
  */
 } // namespace internals

@@ -18,6 +18,7 @@
 
 #include <memory>
 #include <vector>
+#include <array>
 #include <limits>
 #include <cmath>
 
@@ -249,6 +250,24 @@ class ElementAccessor {
 };
 
 
+template<typename T>
+inline bool isfinite(T& t) {
+	return true;
+}
+
+
+template<>
+inline bool isfinite<double>(double& t) {
+	return std::isfinite(t);
+}
+
+template<>
+inline bool isfinite<float>(float& t) {
+	return std::isfinite(t);
+}
+
+
+
 template <typename T, typename TElementAccessor>
 class Statistics {
     /* Finds finite min and max values in the array
@@ -263,7 +282,7 @@ class Statistics {
             sorted = true;
 
             if _PLACEMENT_SORT_CONSTEXPR (std::numeric_limits<T>::has_infinity) {
-                while(!std::isfinite(prev_value) && first_finite_i < size) {
+                while(!isfinite(prev_value) && first_finite_i < size) {
                     ++first_finite_i;
                     const T value = array.get_value(first_finite_i);
                     if (value < prev_value)
@@ -281,7 +300,7 @@ class Statistics {
                     sorted = false;
                 prev_value = value;
                 if _PLACEMENT_SORT_CONSTEXPR (std::numeric_limits<T>::has_infinity)
-                    if (!std::isfinite(value))
+                    if (!isfinite(value))
                         continue;
                 if (value < min)
                     min = value;
@@ -340,10 +359,10 @@ class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_p
         PlaceCalculator(const TStatistics& statistics, size_t size) : min(statistics.get_min()), last_index(size - 1) {
             T max = statistics.get_max();
             invariant = ((long double)size - 1.) / (max - min);
-            if (!std::isfinite(invariant) || invariant == 0.) {
+            if (!isfinite(invariant) || invariant == 0.) {
                 split = true;
                 split_value = (0.5 * max + 0.5 * min);
-                if (!std::isfinite(split_value))
+                if (!isfinite(split_value))
                     split_value = max;
             }
         }
@@ -373,7 +392,7 @@ class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_p
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
 template<typename T>
 static inline void prefetch(T p) {
-	_mm_prefetch(p, _MM_HINT_NTA);
+	_mm_prefetch((char*)p, _MM_HINT_NTA);
 }
 #else
 template<typename T>
@@ -429,20 +448,22 @@ template <typename TElementAccessor, typename TPlaceCalculator, typename counter
 static inline void move_elements_in_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
     const size_t size = array.get_count();
     constexpr typename counters_t::value_type topBit = (typename counters_t::value_type)1 << (sizeof(typename counters_t::value_type)*8 - 1);
-    const size_t block_size = (size > 512*1024) ? 32 : 4;
+    constexpr size_t block_size_high = 32;
+    constexpr size_t block_size_low = 4;
+    const size_t block_size = (size > 512*1024) ? block_size_high : block_size_low;
 
     /* This algorithm moves elements to their places and sorts out collisions with no extra memory except already available counters.
      * It uses highest bit in counters to mark elements which are already moved to their destination place.
      * This way is fastest though looks ugly. It saves memory traffic. */
 
     for (size_t sorted = 0; sorted < size; ) {
-        size_t places[block_size];
+        size_t places[block_size_high];
         const size_t block_end = sorted + std::min(block_size, size - sorted);
         for (size_t i = sorted; i < block_end; ++i) { // prefetch counters
             if (!(topBit & counters[i])) {
                 const size_t place = placer.get_place(array.get_value(i));
                 places[i - sorted] = place;
-                _mm_prefetch(&counters[place], _MM_HINT_NTA);
+                prefetch(&counters[place]);
             }
         }
         for (size_t i = sorted; i < block_end; ++i) { // move
@@ -707,7 +728,7 @@ void placement_sort(TElementAccessor& array) {
 }
 
 /* TODO:
- * MSVS C++11 support
+ * Fix MSVS low performance
  * port tests
  * topBit hider functors
  * fix (36, initFexpGrowth<float> non buff case

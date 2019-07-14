@@ -21,11 +21,11 @@ template <class RandomIt>
 void placement_sort::reverse_sort(RandomIt first, RandomIt last); 
 ```
 Above is similar to std::sort interface.
-Requires `operator[](size_t)` to return a fundamental type (int, float, etc..), and will sort basing on the value.
+Requires that T implements `operator[](size_t)` which returns a value of a fundamental type (int, float, etc..). The value will be used to define order.
 Also requires T or dereferenced RandomIt to support std::move.
 
 
-Below are interfaces with custom accessor to value to sort on:
+Interface below allows to implement a custom accessor to a value to sort by:
 ```cpp
 template <typename T, typename TValueAccessor>
 void placement_sort::sort(T* first, size_t count, const TValueAccessor& valueAccessor);
@@ -35,13 +35,13 @@ void placement_sort::sort(RandomIt first, RandomIt last, const TValueAccessor& v
 ```
 where valueAccessor is
 ```cpp
-auto valueAccessor = [](const T* element) -> fund_type {return element->value};
+auto valueAccessor = [](const T* element) -> fund_type {return element->getValueToSortBy()};
 ```
 or
 ```cpp
 template <class T>
 struct ValueAccessor {
-    fund_type operator() (const T* element) const { return element->value;}
+    fund_type operator() (const T* element) const { return element->getValueToSortBy();}
 };
 
 ```
@@ -66,20 +66,21 @@ If numbers range is larger or smaller than size, use shift and scale operations 
 Idea in details
 ---------------
 
-Let's assume A is not sorted input array, B is sorted output.
+Let's assume A is not sorted input array, and B is a sorted output.
+Steps:
 1. Find min and max values in the A.
 2. Define placer(x) := (x - min) * size / (max - min)
-3. Move A[i] to B[placer(A[i]] for i = 1..N.
+3. Move A[i] to B[placer(A[i])] for i = 1..N.
 
 Collissions resolution.
-Except cases of soring unque 1..N numbers there collisions appear. It's where place(A[i]) == place(A[j]) for some of i and j.
+Except of cases of soring unque 1..N numbers there are collisions to appear. It means that place(A[i]) == place(A[j]) for some of i and j, or in other words that A[i] and A[j] compete for the same place with the current placer() .
 
-To detect collisions let's count elements in each final position using N counters.
+To detect collisions the algorithm uses N counters which store a number of elements competing for corresponding place.
 If each counter[i] == 1 for any i {1..N}, then there is no collisions. Just move A[i] to B[place[i]] and stop.
-Otherwise:
-1. Compute memory distribution. For example if counter[1] = 1, counter[2] = 10, counter[3] = 2, then the element with place == 1 will be on the 1st position, elements with place == 2 will be on positions from 2nd to 11th, and elements with place == 3 will be on positions 12th and 13th. To save memory just replace counter[i] with index from which the corresponding intervals start. Thus counter[1] = 1, counter[2] = 2, counter[3] = 12.
+Otherwise there are following steps to perform:
+1. Compute memory distribution. For example for array of 13 elements if counter[1] = 1, counter[2] = 10, counter[3] = 2, then it means that the element with place == 1 will be on the 1st position, elements with place == 2 will be on positions from 2nd to 11th, and elements with place == 3 will be on positions 12th and 13th. To save some memory just replace counter[i] with index from which the corresponding intervals start. Thus counter[1] = 1, counter[2] = 2, counter[3] = 12.
 2. Move elements according to the memory distribution. From the example above the element in the 1st position will be smaller than any other element. Elements in positions from 2nd to 11th will be larger than the 1st, and smaller than 12th and 13th. This could be done be moving A[i] to B[counterr[place(A[i])]] and then incrementing counter[placer(A[i])] by one, so that it points to the next place in the interval to put there the following colliding element.
-3. Sort out recursively intervals with more than one element. To keep the worst case operations count limit within O(N * log(N)) the following strategy is used. If one interval is larger than N / 2, such an interval is devided into two equal subintervals, and both sorted recursively and separately, than merge sort step is used to join them.
+3. Sort out recursively intervals with more than one element. To keep the worst case operations count limit within O(N * log(N)) the following strategy is used. If one interval is larger than N / 2, such an interval is devided into two equal subintervals, and both sorted recursively and separately, than merge sort step is applied to join them.
 
 Complexity
 ----------
@@ -106,7 +107,7 @@ Memory usage
 
 Uses `O((sizeof(T) + k * sizeof(index_t)) * size)` extra memory. 
 
-It is possible to implement a not stable version can run on just `sizeof(index_t) * size` extra memory.
+It is possible to implement a not stable version which can run on just `sizeof(index_t) * size` extra memory.
 
 
 Applicability
@@ -120,7 +121,7 @@ Possible future features
 ------------------------
 
 - SMP (openmp/pthreads) 
-    - sort chunks and merge sort into final
+    - sort number of thread chunks and merge sort these into sorted result
 
 - Find only i-th to k-th elements of sorted array
 

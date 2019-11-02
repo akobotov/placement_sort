@@ -133,7 +133,6 @@ namespace internals {
 #define _PLACEMENT_SORT_CONSTEXPR
 #endif
 
-
 template<typename TElementAccessor>
 void placement_sort(TElementAccessor& array);
 
@@ -252,18 +251,18 @@ class ElementAccessor {
 
 template<typename T>
 inline bool isfinite(T& t) {
-	return true;
+    return true;
 }
 
 
 template<>
 inline bool isfinite<double>(double& t) {
-	return std::isfinite(t);
+    return std::isfinite(t);
 }
 
 template<>
 inline bool isfinite<float>(float& t) {
-	return std::isfinite(t);
+    return std::isfinite(t);
 }
 
 
@@ -392,7 +391,7 @@ class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_p
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
 template<typename T>
 static inline void prefetch(T p) {
-	_mm_prefetch((char*)p, _MM_HINT_NTA);
+    _mm_prefetch((char*)p, _MM_HINT_NTA);
 }
 #else
 template<typename T>
@@ -517,7 +516,7 @@ template<typename  TElementAccessor>
 void merge_sort(TElementAccessor& array);
 
 template<typename  TElementAccessor>
-void qsort(TElementAccessor& array);
+void quick_sort(TElementAccessor& array);
 
 
 template <typename TElementAccessor, typename counters_t>
@@ -533,7 +532,7 @@ static inline void sort_collisions(TElementAccessor& array, counters_t& counters
                 if _PLACEMENT_SORT_CONSTEXPR(TElementAccessor::uses_buffer()) {
                     merge_sort(sub_interval);
                 } else {
-                    qsort(sub_interval);
+                    quick_sort(sub_interval);
                 }
             } else {
                 placement_sort(sub_interval);
@@ -576,33 +575,33 @@ static inline void selection_sort(TElementAccessor& array) {
 
 template<typename TElementAccessor>
 static inline void three_sort(TElementAccessor& array, size_t index_0, size_t index_1, size_t index_2) {
-	if (array.get_value(index_1) < array.get_value(index_0))
-		array.swap(index_1, index_0);
-	if (array.get_value(index_2) < array.get_value(index_0))
-		array.swap(index_2, index_0);
-	if (array.get_value(index_2) < array.get_value(index_1))
-		array.swap(index_2, index_1);
+    if (array.get_value(index_1) < array.get_value(index_0))
+        array.swap(index_1, index_0);
+    if (array.get_value(index_2) < array.get_value(index_0))
+        array.swap(index_2, index_0);
+    if (array.get_value(index_2) < array.get_value(index_1))
+        array.swap(index_2, index_1);
 }
 
 template<typename TElementAccessor>
 static inline bool small_size_sort(TElementAccessor& array) {
     const size_t size = array.get_count();
-	switch(size) {
-		case 0:
-		case 1:
-			return true;
-		case 2:
-			if (array.get_value(1) < array.get_value(0))
-				array.swap(1, 0);
-			return true;
-		case 3:
-			three_sort(array, 0, 1, 2);
-			return true;
-		default:
-			if (size <= 8) {
-				selection_sort(array);
-				return true;
-			}
+    switch(size) {
+        case 0:
+        case 1:
+            return true;
+        case 2:
+            if (array.get_value(1) < array.get_value(0))
+                array.swap(1, 0);
+            return true;
+        case 3:
+            three_sort(array, 0, 1, 2);
+            return true;
+        default:
+            if (size <= 8) {
+                selection_sort(array);
+                return true;
+            }
     }
 
     return false;
@@ -620,10 +619,14 @@ void merge_sort(TElementAccessor& array) {
 
     const size_t size = array.get_count();
     const size_t half = size / 2;
-    TElementAccessor sub_interval_left(array, 0, half);
-    placement_sort(sub_interval_left);
-    TElementAccessor sub_interval_right(array, half, size - half);
-    placement_sort(sub_interval_right);
+    {
+        TElementAccessor sub_interval_left(array, 0, half);
+        placement_sort(sub_interval_left);
+    }
+    {
+        TElementAccessor sub_interval_right(array, half, size - half);
+        placement_sort(sub_interval_right);
+    }
 
     for(size_t i = 0; i < size; ++i) {
         array.move_to_buffer(i);
@@ -642,7 +645,7 @@ void merge_sort(TElementAccessor& array) {
 
 
 template<typename TElementAccessor>
-void qsort(TElementAccessor& array) {
+void quick_sort(TElementAccessor& array) {
     if (small_size_sort(array))
         return;
 
@@ -650,23 +653,26 @@ void qsort(TElementAccessor& array) {
     const size_t mid = size / 2;
     const size_t top = size - 1;
 
-	three_sort(array, 0, mid, top);
-    array.swap(mid, top);
+    three_sort(array, 0, top, mid);
 
     typename TElementAccessor::value_type pivot = array.get_value(top);
-    size_t i = 0, j = size - 2;
+    size_t i = 0, j = top - 1;
     while (i < j) {
-        while (i < j && array.get_value(i) < pivot) i++;
-        while (i < j && array.get_value(j) > pivot) j--;
+        while (i <= j && array.get_value(i) <= pivot) i++;
+        while (i <= j && array.get_value(j) >= pivot) j--;
         if (i < j)
             array.swap(i++, j--);
     }
     array.swap(i, top);
 
-    TElementAccessor left(array, 0, i);
-    placement_sort(left);
-    TElementAccessor right(array, i + 1, size - i - 1);
-    placement_sort(right);
+    if (i > 1) {
+        TElementAccessor left(array, 0, i);
+        placement_sort(left);
+    }
+    if (size - i > 2) {
+        TElementAccessor right(array, i + 1 , size - i - 1);
+        placement_sort(right);
+    }
 }
 
 /*

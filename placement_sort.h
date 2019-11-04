@@ -67,12 +67,14 @@ struct Ascending {
 };
 
 
+// Real types
 template <class T, typename T_is_integral = void>
 struct Descending {
     T operator() (const T* val) const { return -*val;}
 };
 
 
+// Integer types which may be unsigned.
 template <class T>
 struct Descending<T, typename std::enable_if<std::is_unsigned<T>::value, void>::type> {
     T operator() (const T* val) const { return std::numeric_limits<T>::max() - *val;}
@@ -133,13 +135,26 @@ namespace internals {
 #define _PLACEMENT_SORT_CONSTEXPR
 #endif
 
+#ifndef __has_cpp_attribute
+#define __has_cpp_attribute(name) 0
+#endif
+
+#if __has_cpp_attribute(nodiscard)
+#define _PLACEMENT_SORT_NODISCARD [[nodiscard]]
+#elif __has_cpp_attribute(gnu::warn_unused_result)
+#define _PLACEMENT_SORT_NODISCARD [[gnu::warn_unused_result]]
+#else
+#define _PLACEMENT_SORT_NODISCARD
+#endif
+
+
 template<typename TElementAccessor>
 void placement_sort(TElementAccessor& array);
 
 template<typename T>
 class SharedUninitializedBuffer {
     /*
-     * RAII holder for uninitialized memory buffer.
+     * RAII holder for _uninitialized_ memory buffer.
      * For a use as temp storage with std::move
      */
     public:
@@ -331,7 +346,7 @@ template <typename T, typename TStatistics, typename T_is_integral = void>
 class PlaceCalculator {
     /* Compute destination place for an element in sorted array as
      *    place = (element - min) * size / (max - min).
-     * This is implementation for integer types
+     * This implementation is for integer types
      */
     public:
         PlaceCalculator(const TStatistics& statistics, size_t size) : min(statistics.get_min()) {
@@ -354,7 +369,7 @@ template <typename T, typename TStatistics>
 class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_point<T>::value, void>::type> {
     /* Compute destination place for an element in sorted array as
      *    place = (element - min) * size / (max - min).
-     * This is implementation for real types (float, double).
+     * This implementation is for real types (float, double, ...).
      */
    public:
         PlaceCalculator(const TStatistics& statistics, size_t size) : min(statistics.get_min()), last_index(size - 1) {
@@ -414,7 +429,7 @@ static inline void count_values_at_each_place(TElementAccessor& array, const TPl
         ++counters[place];
         has_collisions |= counters[place] > 1;
 
-        /* Movem to buffer is included here for performance reasons (reuse hot data in cache) */
+        /* Moving to a buffer is included here for performance reasons (reuse hot data in cache) */
         if _PLACEMENT_SORT_CONSTEXPR (fill_buffer)
             array.move_to_buffer(i);;
     }
@@ -606,7 +621,7 @@ static inline bool small_size_sort(TElementAccessor& array) {
             }
     }
 
-    return false;
+    return false; // Means array was not sorted
 }
 
 
@@ -703,7 +718,7 @@ static inline void placement_sort_body(TElementAccessor& array, const TStatistic
 
 
 /*
- * Internal entry point
+ * Internal entry point. It's a dispatcher to a fastest algorithm.
  * @param array Proxy object to accesss elements to sort and their values to define order
  */
 template<typename TElementAccessor>
@@ -716,8 +731,8 @@ void placement_sort(TElementAccessor& array) {
     if (statistics.is_sorted())
         return;
 
-    /* Select an instance to minimize counters memory traffic */
-    static constexpr size_t MAX_STACK_BUF_SIZE = 1;// 2048; std::array is slow
+    /* Select an instance to minimize collision counters memory traffic */
+    static constexpr size_t MAX_STACK_BUF_SIZE = 1; // 2048; std::array is slow
     const size_t size = array.get_count();
     if (size < MAX_STACK_BUF_SIZE) {
         std::array<unsigned short, MAX_STACK_BUF_SIZE> counters_workspace;

@@ -159,21 +159,13 @@ namespace internals {
 #define _PLACEMENT_SORT_CONSTEXPR
 #endif
 
-#ifndef __has_cpp_attribute
-#define __has_cpp_attribute(name) 0
-#endif
-
-#if __has_cpp_attribute(nodiscard)
-#define _PLACEMENT_SORT_NODISCARD [[nodiscard]]
-#elif __has_cpp_attribute(gnu::warn_unused_result)
-#define _PLACEMENT_SORT_NODISCARD [[gnu::warn_unused_result]]
-#else
-#define _PLACEMENT_SORT_NODISCARD
-#endif
-
-
 template<typename TElementAccessor>
 void placement_sort(TElementAccessor& array);
+
+template<typename T>
+inline T get_half(const T& value) {
+    return value >> 1;
+}
 
 template<typename T>
 class SharedUninitializedBuffer {
@@ -404,7 +396,7 @@ class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_p
             invariant = ((long double)size - 1.) / (max - min);
             if (!isfinite(invariant) || invariant == 0.) {
                 split = true;
-                split_value = (0.5 * max + 0.5 * min);
+                split_value = (T(0.5) * max + T(0.5) * min);
                 if (!isfinite(split_value))
                     split_value = max;
             }
@@ -443,18 +435,21 @@ static inline void prefetch(T p) {
 }
 #endif
 
+constexpr size_t prefetch_distance = 128;
+
+
 template <bool fill_buffer, typename counters_t, typename TElementAccessor,typename TPlaceCalculator>
 static inline void count_values_at_each_place(TElementAccessor& array, const TPlaceCalculator& placer,
-                                              counters_t& counters, bool& has_collisions) {
+                                              counters_t& collision_counters, bool& has_collisions) {
     const size_t size = array.get_count();
-    constexpr size_t prefetch_step = 128;
     has_collisions = false;
     for (size_t i = 0; i < size; i++) {
-        if (sizeof(typename counters_t::value_type) > 2) if (i + prefetch_step < size)
-            prefetch(counters.data() + placer.get_place(array.get_value(i + prefetch_step)));
+        if _PLACEMENT_SORT_CONSTEXPR (sizeof(typename counters_t::value_type) > 2)
+            if (i + prefetch_distance < size)
+                prefetch(collision_counters.data() + placer.get_place(array.get_value(i + prefetch_distance)));
         size_t place = placer.get_place(array.get_value(i));
-        ++counters[place];
-        has_collisions |= counters[place] > 1;
+        ++collision_counters[place];
+        has_collisions |= collision_counters[place] > 1;
 
         /* Moving to a buffer is included here for performance reasons (reuse hot data in cache) */
         if _PLACEMENT_SORT_CONSTEXPR (fill_buffer)
@@ -464,9 +459,9 @@ static inline void count_values_at_each_place(TElementAccessor& array, const TPl
 
 
 template <typename counters_t>
-static inline void compute_memory_distribution(counters_t& counters) {
+static inline void compute_memory_distribution(counters_t& collision_counters) {
         typename counters_t::value_type position = 0;
-        for (auto& counter: counters) {
+        for (auto& counter: collision_counters) {
             auto count = counter;
             counter = position;
             position += count;
@@ -475,25 +470,25 @@ static inline void compute_memory_distribution(counters_t& counters) {
 
 
 template <typename TElementAccessor, typename TPlaceCalculator, typename counters_t>
-static inline void move_elements_out_of_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
-    const size_t size = array.get_count();
-    for (size_t i = 0; i < size; i++) {
-        if (sizeof(typename counters_t::value_type) > 2) if (i + 128 < size)
-            prefetch(&counters[placer.get_place(array.get_buf_value(i + 128))]);
+static inline void move_elements_out_of_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& collision_counters) {
+    for (size_t i = 0, size = array.get_count(); i < size; i++) {
+        if _PLACEMENT_SORT_CONSTEXPR (sizeof(typename counters_t::value_type) > 2)
+            if (i + prefetch_distance < size)
+                prefetch(&collision_counters[placer.get_place(array.get_buf_value(i + prefetch_distance))]);
         size_t target_place = placer.get_place(array.get_buf_value(i));
-        size_t actual_place = counters[target_place]++;
+        size_t actual_place = collision_counters[target_place]++;
         array.move_from_buffer(i, actual_place);
     }
 }
 
 
 template <typename TElementAccessor, typename TPlaceCalculator, typename counters_t>
-static inline void move_elements_in_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
+static inline void move_elements_in_place(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& collision_counters) {
     const size_t size = array.get_count();
-    constexpr typename counters_t::value_type topBit = (typename counters_t::value_type)1 << (sizeof(typename counters_t::value_type)*8 - 1);
+    constexpr typename counters_t::value_type topBit = (typename counters_t::value_type)1 << (sizeof(typename counters_t::value_type) * 8 - 1);
     constexpr size_t block_size_high = 32;
     constexpr size_t block_size_low = 4;
-    const size_t block_size = (size > 512*1024) ? block_size_high : block_size_low;
+    const size_t block_size = (size > 512 * 1024) ? block_size_high : block_size_low;
 
     /* This algorithm moves elements to their places and sorts out collisions with no extra memory except already available counters.
      * It uses highest bit in counters to mark elements which are already moved to their destination place.
@@ -503,23 +498,23 @@ static inline void move_elements_in_place(TElementAccessor& array, const TPlaceC
         size_t places[block_size_high];
         const size_t block_end = sorted + std::min(block_size, size - sorted);
         for (size_t i = sorted; i < block_end; ++i) { // prefetch counters
-            if (!(topBit & counters[i])) {
+            if (!(topBit & collision_counters[i])) {
                 const size_t place = placer.get_place(array.get_value(i));
                 places[i - sorted] = place;
-                prefetch(&counters[place]);
+                prefetch(&collision_counters[place]);
             }
         }
         for (size_t i = sorted; i < block_end; ++i) { // move
-            if (!(topBit & counters[i])) {
+            if (!(topBit & collision_counters[i])) {
                 const size_t target_place = places[i - sorted];
-                const size_t actual_place = ~topBit & counters[target_place];
+                const size_t actual_place = ~topBit & collision_counters[target_place];
                 array.swap(i, actual_place);
-                counters[actual_place] |= topBit;
-                counters[target_place]++;
+                collision_counters[actual_place] |= topBit;
+                collision_counters[target_place]++;
             }
         }
-        while (sorted < size && topBit & counters[sorted]) {
-            counters[sorted] &= ~topBit;
+        while (sorted < size && topBit & collision_counters[sorted]) {
+            collision_counters[sorted] &= ~topBit;
             sorted++;
         }
     }
@@ -527,14 +522,14 @@ static inline void move_elements_in_place(TElementAccessor& array, const TPlaceC
 
 
 template <typename TElementAccessor, typename TPlaceCalculator, typename counters_t>
-static inline void move_elements(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& counters) {
+static inline void move_elements(TElementAccessor& array, const TPlaceCalculator& placer, counters_t& collision_counters) {
     /*
      * Move elements according computed memory distribution for colliding elements.
      */
     if _PLACEMENT_SORT_CONSTEXPR (TElementAccessor::uses_buffer()) {
-        move_elements_out_of_place(array, placer, counters);
+        move_elements_out_of_place(array, placer, collision_counters);
     } else {
-        move_elements_in_place(array, placer, counters);
+        move_elements_in_place(array, placer, collision_counters);
     }
 }
 
@@ -564,14 +559,14 @@ void quick_sort(TElementAccessor& array);
 
 
 template <typename TElementAccessor, typename counters_t>
-static inline void sort_collisions(TElementAccessor& array, counters_t& counters) {
+static inline void sort_collisions(TElementAccessor& array, const counters_t& collision_counters) {
     const size_t size = array.get_count();
     typename counters_t::value_type position = 0;
     for (size_t i = 0; i < size; i++) {
-        typename counters_t::value_type count = counters[i] - position;
+        typename counters_t::value_type count = collision_counters[i] - position;
         if (count > 1) {
             TElementAccessor sub_interval(array, position, count);
-            bool placer_is_not_optimal = count > size / 2;
+            bool placer_is_not_optimal = count > get_half(size);
             if (placer_is_not_optimal) {
                 if _PLACEMENT_SORT_CONSTEXPR(TElementAccessor::uses_buffer()) {
                     merge_sort(sub_interval);
@@ -662,7 +657,7 @@ void merge_sort(TElementAccessor& array) {
         return;
 
     const size_t size = array.get_count();
-    const size_t half = size / 2;
+    const size_t half = get_half(size);
     {
         TElementAccessor sub_interval_left(array, 0, half);
         placement_sort(sub_interval_left);
@@ -721,23 +716,23 @@ void quick_sort(TElementAccessor& array) {
 
 /*
  * Placement sort main body
- * @param array       Proxy object to accesss elements to sort and their values to define order
- * @param statistics  Object to hold min and max
- * @param counters    Buffer for counters all set to zero
+ * @param array                 Proxy object to handle array to sort and access it's elements numerical values
+ * @param statistics            Object to hold min and max
+ * @param collision_counters    Buffer for counters all set to zero
  */
 template <typename counters_t, typename TElementAccessor, typename TStatistics>
-static inline void placement_sort_body(TElementAccessor& array, const TStatistics& statistics, counters_t& counters) {
+static inline void placement_sort_body(TElementAccessor& array, const TStatistics& statistics, counters_t& collision_counters) {
     bool has_collisions;
     const size_t size = array.get_count();
 
     const PlaceCalculator<typename TElementAccessor::value_type, TStatistics> placer(statistics, size);
 
-    count_values_at_each_place<TElementAccessor::uses_buffer()>(array, placer, counters, has_collisions);
+    count_values_at_each_place<TElementAccessor::uses_buffer()>(array, placer, collision_counters, has_collisions);
 
     if (has_collisions) {
-        compute_memory_distribution(counters);
-        move_elements(array, placer, counters);
-        sort_collisions(array, counters);
+        compute_memory_distribution(collision_counters);
+        move_elements(array, placer, collision_counters);
+        sort_collisions(array, collision_counters);
     } else {
         move_elements(array, placer);
     }
@@ -758,22 +753,24 @@ void placement_sort(TElementAccessor& array) {
     if (statistics.is_sorted())
         return;
 
-    /* Select an instance to minimize collision counters memory traffic */
-    static constexpr size_t MAX_STACK_BUF_SIZE = 1; // 2048; std::array is slow
+    /* Select an instance to minimize collision counters memory traffic.
+     * On a recursive call these are not reused due to possible fragmentation.
+     */
+    static constexpr size_t MAX_STACK_BUF_SIZE = 1; // 2048; std::array is slow :(
     const size_t size = array.get_count();
     if (size < MAX_STACK_BUF_SIZE) {
-        std::array<unsigned short, MAX_STACK_BUF_SIZE> counters_workspace;
-        std::fill(counters_workspace.begin(), counters_workspace.begin() + size, 0);
-        placement_sort_body(array, statistics, counters_workspace);
-    } else if (size < std::numeric_limits<unsigned short>::max() >> 1) {
-        std::vector<unsigned short> counters_workspace(size);
-        placement_sort_body(array, statistics, counters_workspace);
-    } else if (size < std::numeric_limits<unsigned int>::max() >> 1) {
-        std::vector<unsigned int> counters_workspace(size);
-        placement_sort_body(array, statistics, counters_workspace);
+        std::array<unsigned short, MAX_STACK_BUF_SIZE> collision_counters;
+        std::fill(collision_counters.begin(), collision_counters.begin() + size, 0);
+        placement_sort_body(array, statistics, collision_counters);
+    } else if (size < get_half(std::numeric_limits<unsigned short>::max())) {
+        std::vector<unsigned short> collision_counters(size);
+        placement_sort_body(array, statistics, collision_counters);
+    } else if (size < get_half(std::numeric_limits<unsigned int>::max())) {
+        std::vector<unsigned int> collision_counters(size);
+        placement_sort_body(array, statistics, collision_counters);
     } else {
-        std::vector<unsigned long long int> counters_workspace(size);
-        placement_sort_body(array, statistics, counters_workspace);
+        std::vector<unsigned long long int> collision_counters(size);
+        placement_sort_body(array, statistics, collision_counters);
     }
 }
 

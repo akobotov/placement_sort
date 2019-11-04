@@ -17,6 +17,8 @@
 /*
  * PLACEMENT SORT:
  * A fast sorting algorith at average O(n) and worst O(n*log(n)) operations.
+ *
+ * URL: https://github.com/akobotov/placement_sort
  */
 
 #pragma once

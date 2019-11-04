@@ -21,14 +21,14 @@
 
 #pragma once
 
+#include <array>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
-#include <array>
-#include <limits>
-#include <cmath>
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
-#include <xmmintrin.h>
+  #include <xmmintrin.h>
 #endif
 
 namespace placement_sort {
@@ -49,12 +49,21 @@ void placement_sort(TElementAccessor& array);
 
 
 /*
- * Base interface functions
+ * Ugly setup.
  */
 
+// Only version with copy buffer enabled provides stable sorting (preserves order of equal elements)
+constexpr bool use_copy_buffer = true;
+
+
+/*
+ * Base interface functions (look here).
+ */
+
+// Raw arrays version.
 template <typename T, typename TValueAccessor>
 inline void sort(T* first, size_t count, const TValueAccessor& valueAccessor) {
-    placement_sort::internals::ElementAccessor<true, T, TValueAccessor> array(first, count, valueAccessor);
+    placement_sort::internals::ElementAccessor<use_copy_buffer, T, TValueAccessor> array(first, count, valueAccessor);
     placement_sort::internals::placement_sort(array);
 }
 
@@ -62,7 +71,7 @@ inline void sort(T* first, size_t count, const TValueAccessor& valueAccessor) {
 // Version for use with iterators.
 template <class RandomIt, typename TValueAccessor>
 inline void sort(RandomIt first, RandomIt last, const TValueAccessor& valueAccessor) {
-    placement_sort::internals::ElementAccessor<true, typename RandomIt::value_type, TValueAccessor> array(&first[0], last - first, valueAccessor);
+    placement_sort::internals::ElementAccessor<use_copy_buffer, typename RandomIt::value_type, TValueAccessor> array(&first[0], last - first, valueAccessor);
     placement_sort::internals::placement_sort(array);
 }
 

@@ -113,16 +113,18 @@ inline void sort(RandomIt first, RandomIt last) {
 
 /* --- Aliases --- */
 
-
-template <class RandomIt>
-inline void stable_sort(RandomIt first, RandomIt last) {
+// Ascending stable sort of RandomIt[first, last).
+template <class RandomIt, bool enabled = use_copy_buffer>
+inline typename std::enable_if<enabled, void>::type
+stable_sort(RandomIt first, RandomIt last) {
     placement_sort::sort(first, last);
 }
 
 
 // Ascending stable sort by a custom field/method.
-template <class RandomIt, typename TValueAccessor>
-inline void stable_sort(RandomIt first, RandomIt last, const TValueAccessor& valueAccessor) {
+template <class RandomIt, typename TValueAccessor, bool enabled = use_copy_buffer>
+inline typename std::enable_if<enabled, void>::type
+stable_sort(RandomIt first, RandomIt last, const TValueAccessor& valueAccessor) {
     placement_sort::sort(first, last, valueAccessor);
 }
 

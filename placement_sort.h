@@ -289,21 +289,24 @@ class ElementAccessor {
 
 
 template<typename T>
-inline bool isfinite(T& t) {
-    return true;
+constexpr bool isfinite(T& t) {
+    return true; // default for integers
 }
 
-
 template<>
-inline bool isfinite<double>(double& t) {
+constexpr bool isfinite<double>(double& t) {
     return std::isfinite(t);
 }
 
 template<>
-inline bool isfinite<float>(float& t) {
+constexpr bool isfinite<long double>(long double& t) {
     return std::isfinite(t);
 }
 
+template<>
+constexpr bool isfinite<float>(float& t) {
+    return std::isfinite(t);
+}
 
 
 template <typename T, typename TElementAccessor>

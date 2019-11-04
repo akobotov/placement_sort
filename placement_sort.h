@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+/*
+ * PLACEMENT SORT:
+ * A fast sorting algorith at average O(n) and worst O(n*log(n)) operations.
+ */
+
 #pragma once
 
 #include <memory>
@@ -28,9 +33,8 @@
 
 namespace placement_sort {
 
-
 /*
- * Forward declarations
+ * Forward declarations (skip that)
  */
 
 namespace internals {
@@ -43,6 +47,7 @@ void placement_sort(TElementAccessor& array);
 
 } // namespace internals
 
+
 /*
  * Base interface functions
  */
@@ -54,6 +59,7 @@ inline void sort(T* first, size_t count, const TValueAccessor& valueAccessor) {
 }
 
 
+// Version for use with iterators.
 template <class RandomIt, typename TValueAccessor>
 inline void sort(RandomIt first, RandomIt last, const TValueAccessor& valueAccessor) {
     placement_sort::internals::ElementAccessor<true, typename RandomIt::value_type, TValueAccessor> array(&first[0], last - first, valueAccessor);
@@ -61,32 +67,35 @@ inline void sort(RandomIt first, RandomIt last, const TValueAccessor& valueAcces
 }
 
 
+// TValueAccessor for arrays of fundamental types (int, float, etc..).
 template <class T>
 struct Ascending {
     T operator() (const T* val) const { return *val;}
 };
 
 
-// Real types
+// TValueAccessor for reverse sorting.
 template <class T, typename T_is_integral = void>
 struct Descending {
     T operator() (const T* val) const { return -*val;}
 };
 
 
-// Integer types which may be unsigned.
+// TValueAccessor for reverse sortin of unsigned types.
 template <class T>
 struct Descending<T, typename std::enable_if<std::is_unsigned<T>::value, void>::type> {
     T operator() (const T* val) const { return std::numeric_limits<T>::max() - *val;}
 };
 
 
+// Ascendong sort of raw arrays of fundamental types.
 template <typename T>
 inline void sort(T* first, size_t count) {
     placement_sort::sort(first, count, Ascending<T>());
 }
 
 
+// Asceding sort of RandomIt[first,last).
 template <class RandomIt>
 inline void sort(RandomIt first, RandomIt last) {
     placement_sort::sort(first, last, Ascending<typename RandomIt::value_type>());
@@ -102,18 +111,21 @@ inline void stable_sort(RandomIt first, RandomIt last) {
 }
 
 
+// Ascending stable sort by a custom field/method.
 template <class RandomIt, typename TValueAccessor>
 inline void stable_sort(RandomIt first, RandomIt last, const TValueAccessor& valueAccessor) {
     placement_sort::sort(first, last, valueAccessor);
 }
 
 
+// Descending sort of raw arrays of fundamental types.
 template <typename T>
 inline void reverse_sort(T* first, size_t count) {
     placement_sort::sort(first, count, Descending<T>());
 }
 
 
+// Descending sort of RandomIt[first, last).
 template <class RandomIt>
 inline void reverse_sort(RandomIt first, RandomIt last) {
     placement_sort::sort(first, last, Descending<typename RandomIt::value_type>());
@@ -123,7 +135,8 @@ inline void reverse_sort(RandomIt first, RandomIt last) {
 
 /*****************************************************
  *
- * Internal classes and functions
+ * Internal classes and functions.
+ * Cross this line to learn how the algorithm works.
  *
  *****************************************************/
 

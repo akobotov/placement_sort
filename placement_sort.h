@@ -689,19 +689,21 @@ void quick_sort(TElementAccessor& array) {
         return;
 
     const size_t size = array.get_count();
-    const size_t mid = size / 2;
+    const size_t mid = get_half(size);
     const size_t top = size - 1;
 
     three_sort(array, 0, top, mid);
 
-    typename TElementAccessor::value_type pivot = array.get_value(top);
+    typename TElementAccessor::value_type pivot_value = array.get_value(top);
     size_t i = 0, j = top - 1;
-    while (i < j) {
-        while (i <= j && array.get_value(i) <= pivot) i++;
-        while (i <= j && array.get_value(j) >= pivot) j--;
+    do {
+        while (i <= j && array.get_value(i) < pivot_value) i++;
+        while (i <= j && array.get_value(j) > pivot_value) j--;
         if (i < j)
             array.swap(i++, j--);
-    }
+    } while (i < j);
+    if (array.get_value(i) < pivot_value) i++;
+
     array.swap(i, top);
 
     if (i > 1) {
@@ -709,7 +711,7 @@ void quick_sort(TElementAccessor& array) {
         placement_sort(left);
     }
     if (size - i > 2) {
-        TElementAccessor right(array, i + 1 , size - i - 1);
+        TElementAccessor right(array, i + 1 , top - i);
         placement_sort(right);
     }
 }
@@ -778,7 +780,6 @@ void placement_sort(TElementAccessor& array) {
  * Fix MSVS low performance
  * port tests
  * topBit hider functors
- * fix (36, initFexpGrowth<float> non buff case
  * sort(vector<T>) using vector.swap to save moves twice
  * nan support
  * use only < as comparator

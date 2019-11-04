@@ -331,6 +331,7 @@ template <typename T, typename TStatistics, typename T_is_integral = void>
 class PlaceCalculator {
     /* Compute destination place for an element in sorted array as
      *    place = (element - min) * size / (max - min).
+     * This is implementation for integer types
      */
     public:
         PlaceCalculator(const TStatistics& statistics, size_t size) : min(statistics.get_min()) {
@@ -353,6 +354,7 @@ template <typename T, typename TStatistics>
 class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_point<T>::value, void>::type> {
     /* Compute destination place for an element in sorted array as
      *    place = (element - min) * size / (max - min).
+     * This is implementation for real types (float, double).
      */
    public:
         PlaceCalculator(const TStatistics& statistics, size_t size) : min(statistics.get_min()), last_index(size - 1) {
@@ -367,7 +369,7 @@ class PlaceCalculator<T, TStatistics, typename std::enable_if<std::is_floating_p
         }
 
         inline size_t get_place(const T& element) const {
-            /* Division below is replaced with multiplication and bit shift for performance reasons */
+            /* Division below is replaced with multiplication for performance reasons */
             if _PLACEMENT_SORT_CONSTEXPR (std::numeric_limits<T>::has_infinity) {
                 if (element == std::numeric_limits<T>::infinity())
                     return last_index;
@@ -544,7 +546,7 @@ static inline void sort_collisions(TElementAccessor& array, counters_t& counters
 
 
 /*
- * Selection sort has minimal swaps, and is good for modern vectorization.
+ * Selection sort has minimal swaps, is stable and is good for modern vectorization.
  */
 template<typename TElementAccessor>
 static inline void selection_sort(TElementAccessor& array) {
